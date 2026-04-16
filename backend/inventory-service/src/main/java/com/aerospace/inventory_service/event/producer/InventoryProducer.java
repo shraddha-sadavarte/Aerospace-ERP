@@ -1,5 +1,6 @@
 package com.aerospace.inventory_service.event.producer;
 
+import com.aerospace.inventory_service.entity.Part;
 import com.aerospace.inventory_service.event.KafkaTopics;
 import com.aerospace.inventory_service.event.PartCreatedEvent;
 import lombok.RequiredArgsConstructor;
@@ -18,5 +19,10 @@ public class InventoryProducer {
     public void sendCreatedEvent(PartCreatedEvent event) {
         log.info("Sending event to Kafka: {}", event);
         kafkaTemplate.send(KafkaTopics.INVENTORY_CREATED, event);
+    }
+
+    public void sendLowStockEvent(Part updated) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'sendLowStockEvent'");
     }
 }
