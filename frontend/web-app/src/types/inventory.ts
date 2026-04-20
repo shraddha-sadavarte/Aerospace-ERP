@@ -17,6 +17,7 @@ export interface Part {
   serialNumber: string;
   quantity: number;
   location: string | null;
+  reorderLevel: number;
 }
 
 export interface InventoryTransaction {

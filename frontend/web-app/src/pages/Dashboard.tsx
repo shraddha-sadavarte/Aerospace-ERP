@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Package, AlertTriangle, Database, Activity } from 'lucide-react';
-import { DashboardStats, ApiResponse } from '../types/inventory';
+import { DashboardStats, ApiResponse, Part } from '../types/inventory';
+import { LowStockAlert } from '../components/LowStockAlert';
 
 const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [parts, setParts] = useState<Part[]>([]);
 
   useEffect(() => {
     axios.get<ApiResponse<DashboardStats>>('http://localhost:8081/api/v1/dashboard/stats')
-      .then(res => setStats(res.data.data))
-      .catch(err => console.error("Error fetching stats", err));
+      .then(res => setStats(res.data.data));
+    
+      //fetch parts for the alert banner
+      axios.get<ApiResponse<Part[]>>('http://localhost:8081/api/v1/inventory')
+      .then(res => setParts(res.data.data));
   }, []);
 
   if (!stats) return <div className="p-8 text-center text-gray-500">Loading Dashboard...</div>;
@@ -23,6 +28,7 @@ const Dashboard = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
+      <LowStockAlert parts={parts} />
       <h1 className="text-2xl font-bold mb-6 text-gray-800">Inventory Overview</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

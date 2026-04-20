@@ -11,6 +11,8 @@ import {
   PlusCircle, 
   Package 
 } from 'lucide-react';
+import { exportToExcel } from '../utils/excelExport';
+import { FileDown } from 'lucide-react';
 
 // Import local components and types
 import { Part, ApiResponse } from '../types/inventory';
@@ -88,6 +90,19 @@ const InventoryList = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
+  const handleExport = () => {
+    //map data to clean column names for excel
+    const exportData = parts.map(part => ({
+      "Part ID": part.id,
+      "Name": part.name,
+      "Serial Number": part.serialNumber,
+      "Quantity": part.quantity,
+      "Location": part.location || 'Unassigned'
+    }));
+
+    exportToExcel(exportData, `Aerospace_Inventory_${new Date().toLocaleDateString()}`);
+  }
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       {/* Modals */}
@@ -118,6 +133,14 @@ const InventoryList = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium"
+          >
+            <FileDown size={18} />
+            <span>Export Excel</span>
+          </button>
           
           <button
             onClick={() => setIsModalOpen(true)}
