@@ -13,9 +13,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus; // Added for cleaner status codes
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
 
 import java.util.List;
 
+@CrossOrigin(origins="http://localhost:3000")
 @RestController
 @RequestMapping("/api/v1/inventory")
 @RequiredArgsConstructor
