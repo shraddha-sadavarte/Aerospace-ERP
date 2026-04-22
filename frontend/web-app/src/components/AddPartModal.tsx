@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { X } from 'lucide-react';
+import api from '../api/axios';
+import { X, Package, MapPin, Hash, ChevronRight, CheckCircle, CalendarClock } from 'lucide-react';
 import { ApiResponse, Part } from '../types/inventory';
+import toast from 'react-hot-toast';
 
 interface Props {
   isOpen: boolean;
@@ -9,72 +10,257 @@ interface Props {
   onSuccess: () => void;
 }
 
+type Step = 'master' | 'stock';
+
 export const AddPartModal = ({ isOpen, onClose, onSuccess }: Props) => {
-  const [formData, setFormData] = useState({
+  const [step, setStep] = useState<Step>('master');
+  const [createdPart, setCreatedPart] = useState<Part | null>(null);
+
+  const [masterData, setMasterData] = useState({
     name: '',
     serialNumber: '',
+    partType: '',
+    criticality: 'MEDIUM',
+    reorderLevel: 5,
+  });
+
+  // FIX 1: expiryDate moved here to Step 2 state — it is a batch/stock property,
+  // NOT a part master property. Part master has no expiry, a specific received batch does.
+  const [stockData, setStockData] = useState({
     batchNumber: '',
     quantity: 0,
     location: '',
-    partType: '',
-    criticality: 'MEDIUM',
-    reorderLevel: 5
+    expiryDate: '',
   });
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleReset = () => {
+    setStep('master');
+    setCreatedPart(null);
+    setMasterData({ name: '', serialNumber: '', partType: '', criticality: 'MEDIUM', reorderLevel: 5 });
+    setStockData({ batchNumber: '', quantity: 0, location: '', expiryDate: '' });
+  };
+
+  const handleClose = () => {
+    handleReset();
+    onClose();
+  };
+
+  // Step 1: POST /inventory — only master fields, no stock data
+  const handleCreateMaster = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post<ApiResponse<Part>>('http://localhost:8081/api/v1/inventory', formData);
-      onSuccess(); // Refresh the list
-      onClose();   // Close modal
-    } catch (err) {
-      console.error("Error creating part", err);
+      const res = await toast.promise(
+        api.post<ApiResponse<Part>>('/inventory', masterData),
+        {
+          loading: 'Registering material master...',
+          success: (r) => `Part "${r.data.data.name}" created. Now add initial stock.`,
+          error: (err) => err.response?.data?.message || 'Failed to create part.',
+        }
+      );
+      setCreatedPart(res.data.data);
+      setStep('stock');
+    } catch {
+      // toast.promise handles display
     }
   };
 
+  // Step 2: POST /inventory/{id}/inward-from-grn
+  // FIX 2: expiryDate is now appended to URLSearchParams as ISO LocalDateTime
+  // Backend @RequestParam LocalDateTime expiryDate reads "2024-12-31T00:00:00"
+  // StockBalance.expiryDate gets saved → ExpiryScheduler can then use it
+  const handleAddStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createdPart) return;
+
+    if (!stockData.batchNumber.trim()) {
+      toast.error('Batch number is required for aerospace traceability.');
+      return;
+    }
+    if (stockData.quantity <= 0) {
+      toast.error('Quantity must be greater than zero.');
+      return;
+    }
+
+    const params = new URLSearchParams({
+      qty: String(stockData.quantity),
+      batchNumber: stockData.batchNumber,
+      location: stockData.location,
+    });
+
+    // FIX 2: Was missing — expiryDate collected but never sent to backend
+    // Converts "2024-12-31" (HTML date input) → "2024-12-31T00:00:00" (Java LocalDateTime)
+    if (stockData.expiryDate) {
+      params.append('expiryDate', `${stockData.expiryDate}T00:00:00`);
+    }
+
+    try {
+      await toast.promise(
+        api.post(`/inventory/${createdPart.id}/inward-from-grn?${params}`),
+        {
+          loading: 'Receiving stock into PENDING_QA...',
+          success: `Batch ${stockData.batchNumber} received. Awaiting QA approval.`,
+          error: (err) => err.response?.data?.message || 'Stock inward failed.',
+        }
+      );
+      onSuccess();
+      handleClose();
+    } catch {
+      // toast.promise handles display
+    }
+  };
+
+  const handleSkipStock = () => {
+    onSuccess();
+    handleClose();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden">
-        <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-xl font-bold">Add New Part</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-black"><X /></button>
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
+
+        {/* Header */}
+        <div className="bg-slate-50 px-6 py-4 border-b flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600 rounded-lg text-white"><Package size={20} /></div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight">
+                {step === 'master' ? 'Register New Material' : 'Receive Initial Stock'}
+              </h2>
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                {step === 'master' ? 'Step 1 of 2 — Material Master' : `Step 2 of 2 — GRN Inward for: ${createdPart?.name}`}
+              </p>
+            </div>
+          </div>
+          <button onClick={handleClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+            <X size={20} />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <input 
-            type="text" placeholder="Part Name" required className="w-full p-2 border rounded"
-            onChange={e => setFormData({...formData, name: e.target.value})}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <input 
-              type="text" placeholder="Serial #" required className="w-full p-2 border rounded"
-              onChange={e => setFormData({...formData, serialNumber: e.target.value})}
-            />
-            <input 
-              type="text" placeholder="Batch #" className="w-full p-2 border rounded"
-              onChange={e => setFormData({...formData, batchNumber: e.target.value})}
-            />
+        {/* Step Indicator */}
+        <div className="flex border-b border-slate-100">
+          <div className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors
+            ${step === 'master' ? 'bg-blue-600 text-white' : 'bg-emerald-50 text-emerald-600'}`}>
+            {step === 'master' ? '1. Part Identity' :
+              <span className="flex items-center justify-center gap-1"><CheckCircle size={12} /> Part Created</span>}
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <input 
-              type="number" placeholder="Quantity" className="w-full p-2 border rounded"
-              onChange={e => setFormData({...formData, quantity: parseInt(e.target.value)})}
-            />
-            <input 
-              type="text" placeholder="Part Type (e.g. Engine)" className="w-full p-2 border rounded"
-              onChange={e => setFormData({...formData, partType: e.target.value})}
-            />
+          <div className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-widest transition-colors
+            ${step === 'stock' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400'}`}>
+            2. Stock Inward
           </div>
-          <input 
-            type="text" placeholder="Location" className="w-full p-2 border rounded"
-            onChange={e => setFormData({...formData, location: e.target.value})}
-          />
-          <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700">
-            Create Part
-          </button>
-        </form>
+        </div>
+
+        {/* ── STEP 1: Material Master ── */}
+        {step === 'master' && (
+          <form onSubmit={handleCreateMaster} className="p-6 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Part Name *</label>
+                <input type="text" placeholder="e.g. Turbine Blade Assembly" required value={masterData.name}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium"
+                  onChange={e => setMasterData({ ...masterData, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block flex items-center gap-1.5">
+                  <Hash size={12} /> Serial / SKU *
+                </label>
+                <input type="text" placeholder="Unique SKU Code" required value={masterData.serialNumber}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setMasterData({ ...masterData, serialNumber: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Part Type</label>
+                <input type="text" placeholder="RAW_MATERIAL, CONSUMABLE..." value={masterData.partType}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setMasterData({ ...masterData, partType: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Criticality</label>
+                <select value={masterData.criticality}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none font-semibold"
+                  onChange={e => setMasterData({ ...masterData, criticality: e.target.value })}>
+                  <option value="LOW">LOW</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="HIGH">HIGH</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Reorder Point</label>
+                <input type="number" value={masterData.reorderLevel} min={0}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setMasterData({ ...masterData, reorderLevel: Number(e.target.value) })} />
+              </div>
+              {/* No expiry date in Step 1 — expiry belongs to the batch received in Step 2 */}
+            </div>
+            <div className="flex gap-4 pt-4 border-t border-slate-100">
+              <button type="button" onClick={handleClose}
+                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl hover:bg-slate-50 font-bold text-slate-600 transition-all">
+                Cancel
+              </button>
+              <button type="submit"
+                className="flex-[2] bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2">
+                Create & Add Stock <ChevronRight size={16} />
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── STEP 2: Stock Inward ── */}
+        {step === 'stock' && (
+          <form onSubmit={handleAddStock} className="p-6 space-y-5">
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-700 font-medium">
+              Stock enters <strong>PENDING_QA</strong>. QA must approve before it becomes available for production.
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Batch Number *</label>
+                <input type="text" placeholder="e.g. BATCH-2024-001" required value={stockData.batchNumber}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-mono"
+                  onChange={e => setStockData({ ...stockData, batchNumber: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Quantity *</label>
+                <input type="number" min={1} required value={stockData.quantity || ''}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setStockData({ ...stockData, quantity: parseInt(e.target.value) || 0 })} />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block flex items-center gap-1.5">
+                  <MapPin size={12} /> Warehouse Location
+                </label>
+                <input type="text" placeholder="e.g. WH1-ZONE-A-BIN12" value={stockData.location}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setStockData({ ...stockData, location: e.target.value })} />
+              </div>
+              <div>
+                {/* FIX 1: Expiry date is HERE in Step 2 — it belongs to the batch being received */}
+                {/* FIX 2: This value now gets sent in URLSearchParams to the backend */}
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block flex items-center gap-1.5">
+                  <CalendarClock size={12} /> Batch Expiry Date
+                </label>
+                <input type="date" value={stockData.expiryDate}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => setStockData({ ...stockData, expiryDate: e.target.value })} />
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                  Used by Expiry Scheduler to auto-reject expired batches nightly.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 pt-4 border-t border-slate-100">
+              <button type="button" onClick={handleSkipStock}
+                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl hover:bg-slate-50 font-bold text-slate-500 transition-all text-sm">
+                Skip for Now
+              </button>
+              <button type="submit"
+                className="flex-[2] bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2">
+                Receive Stock <ChevronRight size={16} />
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

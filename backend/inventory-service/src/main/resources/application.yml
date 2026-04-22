@@ -2,6 +2,9 @@ server:
   port: 8081
 
 spring:
+  application:
+    name: inventory-service
+
   datasource:
     url: jdbc:postgresql://localhost:5432/inventory_db
     username: postgres
@@ -15,20 +18,24 @@ spring:
       hibernate:
         format_sql: true
 
-  application:
-    name: inventory-service
-
   kafka:
     bootstrap-servers: localhost:9092
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.info.headers: true   # sends class type in header so consumer knows which class to deserialize into
 
     consumer:
-      group-id: inventory-group-v2
-      auto-offset-reset: earliest
+      group-id: inventory-group                   # FIX: was inventory-group-v3, must match @KafkaListener groupId
+      auto-offset-reset: earliest                 # if no offset exists yet, read from beginning of topic
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer  # wraps real deserializer so bad messages don't crash the consumer
       properties:
-        spring.json.trusted.packages: "com.aerospace.inventory_service.event"
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "com.aerospace.inventory_service.event"  # only deserialize classes from this package — security protection
+        spring.json.type.mapping: "partCreated:com.aerospace.inventory_service.event.PartCreatedEvent,qaUpdated:com.aerospace.inventory_service.event.QAStatusUpdatedEvent"
+
+  cache:
+    type: simple   # ADD THIS — use of  @Cacheable/@CacheEvict but never declared a cache manager

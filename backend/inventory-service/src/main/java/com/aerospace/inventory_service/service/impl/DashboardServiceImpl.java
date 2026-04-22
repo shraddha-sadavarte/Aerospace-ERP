@@ -1,0 +1,50 @@
+package com.aerospace.inventory_service.service.impl;
+
+import com.aerospace.inventory_service.dto.DashboardResponseDTO;
+import com.aerospace.inventory_service.repository.PartRepository;
+import com.aerospace.inventory_service.repository.StockBalanceRepository;
+import com.aerospace.inventory_service.service.DashboardService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable; // FIX 1: was jakarta.persistence.Cacheable
+import org.springframework.stereotype.Service;
+
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class DashboardServiceImpl implements DashboardService { // FIX 2: was missing implements
+
+    private final PartRepository partRepository;
+    private final StockBalanceRepository balanceRepository;
+
+    @Override
+    @Cacheable("dashboardStats")
+    public DashboardResponseDTO getDashboardStats() {
+
+        // fetch once into variable — was calling getTotalApprovedStock() twice (two DB hits)
+        Long approvedRaw = balanceRepository.getTotalApprovedStock();
+        Long pendingQARaw = balanceRepository.getTotalPendingQA();
+        Long rejectedRaw = balanceRepository.getTotalRejected();
+
+        long totalApprovedStock = approvedRaw  != null ? approvedRaw  : 0L;
+        long pendingQA          = pendingQARaw != null ? pendingQARaw : 0L;
+        long rejected           = rejectedRaw  != null ? rejectedRaw  : 0L;
+
+        // Convert List<Object[]> -> Map<partType, count> for frontend chart
+        Map<String, Long> typeMap = partRepository.countPartsByType().stream()
+                .collect(Collectors.toMap(
+                        row -> (String) row[0],  // row[0] = partType string
+                        row -> (Long)   row[1]   // row[1] = count
+                ));
+
+        return DashboardResponseDTO.builder()
+                .totalParts(partRepository.count())
+                .totalQuantity(totalApprovedStock)
+                .pendingQAItems(pendingQA)
+                .rejectedItems(rejected)
+                .partsByType(typeMap)
+                .inventoryValue(0.0) // Wire to Finance service pricing later
+                .build();
+    }
+}

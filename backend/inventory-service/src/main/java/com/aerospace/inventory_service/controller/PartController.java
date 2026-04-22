@@ -3,101 +3,120 @@ package com.aerospace.inventory_service.controller;
 import com.aerospace.inventory_service.dto.PartRequestDTO;
 import com.aerospace.inventory_service.dto.PartResponseDTO;
 import com.aerospace.inventory_service.service.PartService;
+import com.aerospace.inventory_service.service.TransactionService;
 import com.aerospace.inventory_service.common.ApiResponse;
 import com.aerospace.inventory_service.entity.InventoryTransaction;
-
 import lombok.RequiredArgsConstructor;
-
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus; // Added for cleaner status codes
+import org.springframework.data.domain.Page;           // FIX 1: was org.hibernate.query.Page
+import org.springframework.data.domain.PageRequest;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.CrossOrigin;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
-@CrossOrigin(origins="http://localhost:3000")
+@CrossOrigin(origins = "http://localhost:3000")
 @RestController
 @RequestMapping("/api/v1/inventory")
 @RequiredArgsConstructor
 public class PartController {
 
-        private final PartService partService;
+    private final PartService partService;
+    private final TransactionService transactionService; // FIX 2: was TransactionRepository — repositories never belong in controllers
 
-        @PostMapping
-        public ResponseEntity<ApiResponse<PartResponseDTO>> create(@RequestBody PartRequestDTO dto) {
-                PartResponseDTO response = partService.createPart(dto);
-                // Changed to .status(HttpStatus.CREATED) as it's best practice for POST
-                return ResponseEntity.status(HttpStatus.CREATED)
-                                .body(new ApiResponse<>("SUCCESS", response));
-        }
+    @PostMapping
+    public ResponseEntity<ApiResponse<PartResponseDTO>> create(@RequestBody PartRequestDTO dto) {
+        PartResponseDTO response = partService.createPart(dto);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponse<>("SUCCESS", response));
+    }
 
-        @GetMapping
-        public ResponseEntity<ApiResponse<List<PartResponseDTO>>> getAll() {
-                List<PartResponseDTO> list = partService.getAllParts();
-                return ResponseEntity.ok(
-                                new ApiResponse<>("SUCCESS", list));
-        }
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<PartResponseDTO>> update(
+            @PathVariable Long id, @RequestBody PartRequestDTO dto) {
+        PartResponseDTO response = partService.updatePart(id, dto);
+        return ResponseEntity.ok(new ApiResponse<>("UPDATED", response));
+    }
 
-        @GetMapping("/{id}")
-        public ResponseEntity<ApiResponse<PartResponseDTO>> getById(@PathVariable Long id) {
-                PartResponseDTO response = partService.getById(id);
-                return ResponseEntity.ok(
-                                new ApiResponse<>("SUCCESS", response));
-        }
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<PartResponseDTO>>> getAll() {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS", partService.getAllParts()));
+    }
 
-        @PutMapping("/{id}")
-        public ResponseEntity<ApiResponse<PartResponseDTO>> update(@PathVariable Long id,
-                        @RequestBody PartRequestDTO dto) {
-                return ResponseEntity.ok(
-                                new ApiResponse<>("UPDATED", partService.updatedPart(id, dto)));
-        }
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<PartResponseDTO>> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS", partService.getById(id)));
+    }
 
-        @DeleteMapping("/{id}")
-        public ResponseEntity<ApiResponse<String>> delete(@PathVariable Long id) {
-                partService.deletePart(id);
-                return ResponseEntity.ok(
-                                new ApiResponse<>("DELETED", "Part removed successfully"));
-        }
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<String>> delete(@PathVariable Long id) {
+        partService.deletePart(id);
+        return ResponseEntity.ok(new ApiResponse<>("DELETED", "Part removed successfully"));
+    }
 
-        @PostMapping("/{id}/add-stock")
-        public ResponseEntity<ApiResponse<PartResponseDTO>> addStock(
-                        @PathVariable Long id,
-                        @RequestParam int qty) {
-                return ResponseEntity.ok(
-                                new ApiResponse<>("STOCK_ADDED", partService.addStock(id, qty)));
-        }
+    // ERP Step: Receive Stock
+    @PostMapping("/{id}/inward-from-grn")
+    public ResponseEntity<ApiResponse<PartResponseDTO>> inwardStock(
+            @PathVariable Long id,
+            @RequestParam int qty,
+            @RequestParam String batchNumber,
+            @RequestParam String location,
+            @RequestParam(required = false) 
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) 
+            LocalDateTime expiryDate) {
+        return ResponseEntity.ok(new ApiResponse<>("STOCK_RECEIVED_PENDING_QA",
+                partService.addStock(id, qty, batchNumber, location, expiryDate)));
+    }
+    
+    // ERP Step: Issue to Production
+    @PostMapping("/{id}/issue-to-production")
+    public ResponseEntity<ApiResponse<PartResponseDTO>> issueMaterial(
+            @PathVariable Long id,
+            @RequestParam int qty,
+            @RequestParam String batchNumber) {
+        return ResponseEntity.ok(new ApiResponse<>("MATERIAL_ISSUED_TO_PRODUCTION",
+                partService.issueToProduction(id, qty, batchNumber)));
+    }
 
-        @PostMapping("/{id}/consume")
-        public ResponseEntity<ApiResponse<PartResponseDTO>> consumeStock(
-                        @PathVariable Long id,
-                        @RequestParam int qty) {
-                return ResponseEntity.ok(
-                                new ApiResponse<>("STOCK_CONSUMED", partService.consumeStock(id, qty)));
-        }
+    // ERP Step: QA Lifecycle
+    @PostMapping("/{id}/qa-decision")
+    public ResponseEntity<ApiResponse<PartResponseDTO>> processQA(
+            @PathVariable Long id,
+            @RequestParam String batchNumber,
+            @RequestParam String status,
+            @RequestParam String remarks) {
+        return ResponseEntity.ok(new ApiResponse<>("QA_STATUS_UPDATED",
+                partService.processQADecision(id, batchNumber, status, remarks)));
+    }
 
-        @GetMapping("/search")
-        public ResponseEntity<ApiResponse<List<PartResponseDTO>>> search(
-                        @RequestParam String name) {
-                // Removed the manual (List<PartResponseDTO>) cast to prevent potential
-                // ClassCastException
-                List<PartResponseDTO> results = partService.searchByName(name);
-                return ResponseEntity.ok(
-                                new ApiResponse<>("SUCCESS", results));
-        }
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<List<PartResponseDTO>>> search(@RequestParam String name) {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS", partService.searchByName(name)));
+    }
 
-        @GetMapping("/paged")
-        public ResponseEntity<ApiResponse<Page<PartResponseDTO>>> getAll(Pageable pageable) {
-                return ResponseEntity.ok(
-                                new ApiResponse<Page<PartResponseDTO>>("SUCCESS", partService.getAllParts(pageable)));
-        }
+    @GetMapping("/{id}/transactions")
+    public ResponseEntity<ApiResponse<List<InventoryTransaction>>> getTransactionHistory(
+            @PathVariable Long id) {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS",
+                partService.getTransactionHistory(id)));
+    }
 
-        @GetMapping("/{id}/transactions")
-        public ResponseEntity<ApiResponse<List<InventoryTransaction>>> getTransactionHistory(@PathVariable Long id) {
-                List<InventoryTransaction> transactions = partService.getTransactionHistory(id);
-                return ResponseEntity.ok(
-                                new ApiResponse<>("SUCCESS", transactions));
-        }
+    // Batch traceability — auditors
+    @GetMapping("/transactions/batch/{batchNumber}")
+    public ResponseEntity<ApiResponse<List<InventoryTransaction>>> getBatchHistory(
+            @PathVariable String batchNumber) {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS",
+                transactionService.getByBatchNumber(batchNumber))); // FIX 2: through service layer
+    }
 
+    // Paginated parts list
+    @GetMapping("/paged")
+    public ResponseEntity<ApiResponse<Page<PartResponseDTO>>> getPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(new ApiResponse<>("SUCCESS",
+                partService.getAllParts(PageRequest.of(page, size))));
+    }
 }

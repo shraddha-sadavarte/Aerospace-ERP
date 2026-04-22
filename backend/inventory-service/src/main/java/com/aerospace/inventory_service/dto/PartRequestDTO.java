@@ -12,4 +12,6 @@ public class PartRequestDTO {
     private String partType;
     private String criticality;
     private Integer reorderLevel;
+    private String status;    // Maps to qaStatus in Entity
+    private String qaRemarks; // Added to capture remarks from React form
 }

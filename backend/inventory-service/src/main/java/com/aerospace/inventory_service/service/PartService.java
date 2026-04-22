@@ -2,26 +2,33 @@ package com.aerospace.inventory_service.service;
 
 import com.aerospace.inventory_service.dto.*;
 import com.aerospace.inventory_service.entity.InventoryTransaction;
-
-import java.util.List;
-
-import org.springframework.data.domain.Page; // Added for Page support
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 public interface PartService {
+    // Basic CRUD
     PartResponseDTO createPart(PartRequestDTO dto);
     List<PartResponseDTO> getAllParts();
     PartResponseDTO getById(Long id);
-    PartResponseDTO updatedPart(Long id, PartRequestDTO dto);
+    PartResponseDTO updatePart(Long id, PartRequestDTO dto);
     void deletePart(Long id);
-    PartResponseDTO addStock(Long id, int quantity);
-    PartResponseDTO consumeStock(Long id, int quantity);
-    
-    // Updated from Object to List<PartResponseDTO> to match Controller expectations
-    List<PartResponseDTO> searchByName(String name);
-    
-    // Updated from Object to Page<PartResponseDTO> for proper pagination support
-    Page<PartResponseDTO> getAllParts(Pageable pageable);
 
-    List<InventoryTransaction> getTransactionHistory(Long partId);
+    // Standard ERP Core Operations
+    PartResponseDTO addStock(Long id, int quantity, String batchNumber, String location, LocalDateTime expiryDate);
+    PartResponseDTO issueToProduction(Long id, int quantity, String batchNumber);
+    PartResponseDTO processQADecision(Long id, String batchNumber, String newStatus, String remarks);
+
+    // Advanced ERP Integration Methods
+    void reserveStock(Long partId, String batch, int quantity);
+    PartResponseDTO addStockWithConversion(Long id, int quantity, String inputUom,
+                                           String batchNumber, String location);
+    void transferStock(Long id, String batch, String fromBin, String toBin, int qty);
+
+    // Search & History
+    List<PartResponseDTO> searchByName(String name);
+    Page<PartResponseDTO> getAllParts(Pageable pageable);
+    List<InventoryTransaction> getTransactionHistory(Long partId); // delegates to TransactionService internally
 }
