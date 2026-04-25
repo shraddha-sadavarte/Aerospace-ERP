@@ -1,34 +1,38 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Layout } from './components/Layout';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import InventoryList from './pages/InventoryList';
 import TransactionHistory from './pages/TransactionHistory';
-import { Toaster } from 'react-hot-toast';
+import QAInspection from './pages/QAInspection';
 
 function App() {
   return (
     <Router>
-      <Toaster 
-        position="top-right" 
-        reverseOrder={false} 
+      <Toaster
+        position="top-right"
         toastOptions={{
-          // Professional ERP styling for toasts
           duration: 4000,
           style: {
-            background: '#1e293b', // Slate-800
-            color: '#fff',
             borderRadius: '12px',
-            fontSize: '14px',
-            fontWeight: '600'
+            fontWeight: '600',
+            fontSize: '13px',
           },
         }}
       />
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inventory" element={<InventoryList />} />
-          {/* Added the missing leading slash here */}
           <Route path="/inventory/:id/transactions" element={<TransactionHistory />} />
+
+          {/* QA Service route — talks to port 8082 */}
+          <Route path="/qa" element={<QAInspection />} />
+
+          {/* Catch all */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Layout>
     </Router>
