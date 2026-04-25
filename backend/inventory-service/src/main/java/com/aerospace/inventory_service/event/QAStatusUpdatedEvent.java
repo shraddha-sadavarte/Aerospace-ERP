@@ -9,7 +9,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class QAStatusUpdatedEvent {
     private Long partId;
-    private String status; // APPROVED, REJECTED, PENDING_QA
     private String batchNumber;
+    private String status;
     private String location;
+    private String remarks;
+    private String certificateNumber;
+    private String inspectorName;
 }

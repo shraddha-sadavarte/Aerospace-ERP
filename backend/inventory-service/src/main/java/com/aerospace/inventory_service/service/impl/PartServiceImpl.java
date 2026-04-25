@@ -263,26 +263,38 @@ public class PartServiceImpl implements PartService {
     // -------------------------------------------------------------------------
 
     private PartResponseDTO mapWithLiveStock(Part part, StockStatus status) {
-        PartResponseDTO dto = mapper.toDTO(part);
+    PartResponseDTO dto = mapper.toDTO(part);
 
-        List<StockBalance> balances = balanceRepository.findAllBalancesByPart(part.getId());
+    List<StockBalance> balances = balanceRepository.findAllBalancesByPart(part.getId());
 
-        long totalQty = balances.stream()
-                .filter(b -> status == null || b.getStatus() == status)
-                .mapToLong(b -> b.getQuantity() != null ? b.getQuantity() : 0L)
-                .sum();
-        dto.setQuantity((int) totalQty);
+    // Aggregate total quantity filtered by status
+    long totalQty = balances.stream()
+            .filter(b -> status == null || b.getStatus() == status)
+            .mapToLong(b -> b.getQuantity() != null ? b.getQuantity() : 0L)
+            .sum();
+    dto.setQuantity((int) totalQty);
 
-        if (!balances.isEmpty()) {
-            StockBalance primaryBalance = balances.get(0);
-            dto.setBatchNumber(primaryBalance.getBatchNumber());
-            dto.setStatus(primaryBalance.getStatus().name());
-            dto.setLocation(primaryBalance.getLocation());
-            dto.setExpiryDate(primaryBalance.getExpiryDate()); // frontend reads this for the expiry badge
-        } else {
-            dto.setStatus("EMPTY");
-        }
+    if (!balances.isEmpty()) {
+        // FIX: Don't blindly take get(0)
+        // Priority order: APPROVED first, then PENDING_QA, then RESERVED, then REJECTED
+        // This ensures the displayed status reflects the most useful state
+        StockBalance primaryBalance = balances.stream()
+                .min(java.util.Comparator.comparingInt(b -> switch (b.getStatus()) {
+                    case APPROVED    -> 0;
+                    case PENDING_QA  -> 1;
+                    case RESERVED    -> 2;
+                    case REJECTED    -> 3;
+                }))
+                .orElse(balances.get(0));
 
-        return dto;
+        dto.setBatchNumber(primaryBalance.getBatchNumber());
+        dto.setStatus(primaryBalance.getStatus().name());
+        dto.setLocation(primaryBalance.getLocation());
+        dto.setExpiryDate(primaryBalance.getExpiryDate());
+    } else {
+        dto.setStatus("EMPTY");
     }
+
+    return dto;
+}
 }

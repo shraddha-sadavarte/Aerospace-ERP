@@ -1,16 +1,17 @@
 package com.aerospace.inventory_service.config;
 
+import com.aerospace.inventory_service.event.PartCreatedEvent;
+import com.aerospace.inventory_service.event.QAStatusUpdatedEvent;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
-import org.springframework.kafka.core.*;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
-import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,47 +22,62 @@ public class KafkaConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    @Value("${spring.kafka.consumer.group-id}")
-    private String groupId;
+    // Shared base consumer properties
+    private Map<String, Object> baseConsumerProps() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "inventory-group");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        return props;
+    }
 
+    // Factory for QAStatusUpdatedEvent — used by compliance.qa.result topic
     @Bean
-    public ProducerFactory<String, Object> producerFactory() {
-        Map<String, Object> configProps = new HashMap<>();
-        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
-        
-        // ERP FIX: Set to true so consumers know which Event class to use
-        configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, true); 
-        
-        return new DefaultKafkaProducerFactory<>(configProps);
+    public ConsumerFactory<String, QAStatusUpdatedEvent> qaConsumerFactory() {
+        Map<String, Object> props = baseConsumerProps();
+
+        JsonDeserializer<QAStatusUpdatedEvent> deserializer =
+                new JsonDeserializer<>(QAStatusUpdatedEvent.class);
+        deserializer.setUseTypeHeaders(false); // ignore __TypeId__ header
+        deserializer.addTrustedPackages("*");
+
+        ErrorHandlingDeserializer<QAStatusUpdatedEvent> errorHandling =
+                new ErrorHandlingDeserializer<>(deserializer);
+
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), errorHandling);
     }
 
     @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+    public ConcurrentKafkaListenerContainerFactory<String, QAStatusUpdatedEvent> qaKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, QAStatusUpdatedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(qaConsumerFactory());
+        return factory;
+    }
+
+    // Factory for PartCreatedEvent — used by inventory.created topic
+    @Bean
+    public ConsumerFactory<String, PartCreatedEvent> partCreatedConsumerFactory() {
+        Map<String, Object> props = baseConsumerProps();
+
+        JsonDeserializer<PartCreatedEvent> deserializer =
+                new JsonDeserializer<>(PartCreatedEvent.class);
+        deserializer.setUseTypeHeaders(false);
+        deserializer.addTrustedPackages("*");
+
+        ErrorHandlingDeserializer<PartCreatedEvent> errorHandling =
+                new ErrorHandlingDeserializer<>(deserializer);
+
+        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), errorHandling);
     }
 
     @Bean
-    public ConsumerFactory<String, Object> consumerFactory() {
-        Map<String, Object> configProps = new HashMap<>();
-        configProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        configProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        configProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        configProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        configProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
-        
-        // ERP FIX: Allow all event DTOs in the event package
-        configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "com.aerospace.inventory_service.event.*");
-        configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, "java.lang.Object");
-        
-        return new DefaultKafkaConsumerFactory<>(configProps);
-    }
-
-    @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(consumerFactory());
+    public ConcurrentKafkaListenerContainerFactory<String, PartCreatedEvent> partCreatedKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, PartCreatedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(partCreatedConsumerFactory());
         return factory;
     }
 }

@@ -26,21 +26,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(AbstractHttpConfigurer::disable)
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(authz -> authz
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers("/api/v1/dashboard/**").permitAll() // Entire dashboard module public
-                .requestMatchers("/api/v1/inventory/search").permitAll()
-                
-                // ERP Logic: Permit all inventory actions for dev/testing
-                // In production, change .permitAll() to .authenticated()
-                .requestMatchers("/api/v1/inventory/**").permitAll() 
-                
-                .anyRequest().authenticated())
-            .httpBasic(basic -> {});
-            
+            .csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().permitAll()  // open all endpoints during development
+            );
         return http.build();
     }
 
