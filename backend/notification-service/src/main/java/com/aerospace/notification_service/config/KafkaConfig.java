@@ -1,0 +1,61 @@
+package com.aerospace.notification_service.config;
+
+import com.aerospace.notification_service.event.*;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+import org.springframework.kafka.support.serializer.JsonDeserializer;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+public class KafkaConfig {
+
+    @Value("${spring.kafka.bootstrap-servers}")
+    private String bootstrapServers;
+
+    private Map<String, Object> baseProps() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "notification-group");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        return props;
+    }
+
+    private <T> ConcurrentKafkaListenerContainerFactory<String, T> factory(Class<T> clazz) {
+        JsonDeserializer<T> deser = new JsonDeserializer<>(clazz);
+        deser.setUseTypeHeaders(false);
+        deser.addTrustedPackages("*");
+        ErrorHandlingDeserializer<T> errorDeser = new ErrorHandlingDeserializer<>(deser);
+        ConsumerFactory<String, T> cf = new DefaultKafkaConsumerFactory<>(
+            baseProps(), new StringDeserializer(), errorDeser);
+        ConcurrentKafkaListenerContainerFactory<String, T> f = new ConcurrentKafkaListenerContainerFactory<>();
+        f.setConsumerFactory(cf);
+        return f;
+    }
+
+    @Bean public ConcurrentKafkaListenerContainerFactory<String, StockLowEvent> stockLowListenerFactory() {
+        return factory(StockLowEvent.class);
+    }
+
+    @Bean public ConcurrentKafkaListenerContainerFactory<String, QAStatusChangedEvent> qaStatusListenerFactory() {
+        return factory(QAStatusChangedEvent.class);
+    }
+
+    @Bean public ConcurrentKafkaListenerContainerFactory<String, MaterialIssuedEvent> materialIssuedListenerFactory() {
+        return factory(MaterialIssuedEvent.class);
+    }
+
+    @Bean public ConcurrentKafkaListenerContainerFactory<String, StockReceivedEvent> stockReceivedListenerFactory() {
+        return factory(StockReceivedEvent.class);
+    }
+}
